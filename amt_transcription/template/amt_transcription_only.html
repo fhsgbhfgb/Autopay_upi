@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Automatic UPI Payment</title>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to bottom right, #b3e5fc, #81d4fa);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: #fff;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      text-align: center;
+      width: 370px;
+      transition: all 0.3s ease-in-out;
+    }
+    input {
+      width: 80%;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+      text-align: center;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      margin: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    h2 {
+      color: #0277bd;
+    }
+    #statusMsg {
+      margin-top: 10px;
+      color: #007bff;
+      font-weight: bold;
+    }
+    .amount-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    .amount-container input {
+      flex: 1;
+    }
+    .slide-btns {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 15px;
+    }
+    .recording {
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Step 1: Enter UPI ID -->
+  <div class="container" id="step1">
+    <h2>Enter Recipient UPI ID</h2>
+    <input type="text" id="upiId" placeholder="e.g. name@upi" />
+    <div class="slide-btns">
+      <span></span>
+      <button onclick="nextStep()">Next ➡</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Speak or Enter Amount -->
+  <div class="container" id="step2" style="display:none;">
+    <h2>Speak or Enter Amount</h2>
+    <p id="upiDisplay" style="color:#00796b; font-weight:bold;"></p>
+
+    <div class="amount-container">
+      <input type="text" id="amount" placeholder="e.g. 200" />
+      <button id="micBtn" onclick="startListening()">🎤</button>
+    </div>
+
+    <button onclick="openPayment()">Proceed to Pay</button>
+    <p id="statusMsg"></p>
+
+    <div class="slide-btns">
+      <button onclick="prevStep()">⬅ Back</button>
+      <span></span>
+    </div>
+  </div>
+
+  <!-- Step 3: Success Message -->
+  <div class="container" id="step3" style="display:none;">
+    <h2>Payment Successful ✅</h2>
+    <p>Transaction completed successfully.</p>
+    <div class="slide-btns">
+      <button onclick="goHome()">🏠 Home</button>
+      <span></span>
+    </div>
+  </div>
+
+  <script>
+    let upiId = "";
+    let mediaRecorder;
+    let audioChunks = [];
+    const FLASK_SERVER = "http://localhost:5000"; // Python Flask server URL
+
+    // Step 1 → Step 2
+    function nextStep() {
+      upiId = document.getElementById("upiId").value.trim();
+      if (!upiId) {
+        alert("Please enter a valid UPI ID.");
+        return;
+      }
+      document.getElementById("step1").style.display = "none";
+      document.getElementById("step2").style.display = "block";
+      document.getElementById("upiDisplay").innerText = "Paying amount to: " + upiId;
+    }
+
+    // Step 2 → Step 1 (Back)
+    function prevStep() {
+      document.getElementById("step2").style.display = "none";
+      document.getElementById("step1").style.display = "block";
+    }
+
+    // 🏠 Home Button (after success)
+    function goHome() {
+      document.getElementById("step3").style.display = "none";
+      document.getElementById("step1").style.display = "block";
+      document.getElementById("upiId").value = "";
+      document.getElementById("amount").value = "";
+      document.getElementById("statusMsg").innerText = "";
+    }
+
+    // 🎙 Start Recording and Send to Whisper Backend
+    async function startListening() {
+      const status = document.getElementById("statusMsg");
+      const micBtn = document.getElementById("micBtn");
+      
+      try {
+        // Request microphone access
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        status.innerText = "🎧 Listening... Speak your amount";
+        micBtn.disabled = true;
+        micBtn.classList.add("recording");
+        
+        // Create MediaRecorder
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunks.push(event.data);
+        };
+        
+        mediaRecorder.onstop = async () => {
+          status.innerText = "⏳ Processing with Whisper...";
+          micBtn.classList.remove("recording");
+          
+          // Create audio blob
+          const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+          
+          // Send to Flask backend
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'audio.wav');
+          
+          try {
+            const response = await fetch(`${FLASK_SERVER}/transcribe`, {
+              method: 'POST',
+              body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success && result.amount) {
+              document.getElementById("amount").value = result.amount;
+              status.innerText = `✅ Amount detected: ₹${result.amount} (said: "${result.text}")`;
+            } else {
+              status.innerText = `❌ Could not detect amount. Transcribed: "${result.text}"`;
+            }
+          } catch (error) {
+            status.innerText = "❌ Error connecting to server. Make sure Flask server is running!";
+            console.error("Error:", error);
+          }
+          
+          micBtn.disabled = false;
+          
+          // Stop all tracks
+          stream.getTracks().forEach(track => track.stop());
+        };
+        
+        // Start recording
+        mediaRecorder.start();
+        
+        // Stop after 5 seconds
+        setTimeout(() => {
+          if (mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+          }
+        }, 5000);
+        
+      } catch (error) {
+        status.innerText = "❌ Microphone access denied!";
+        micBtn.disabled = false;
+        console.error("Error:", error);
+      }
+    }
+
+    // 💳 Razorpay Payment Integration
+    function openPayment() {
+      const amount = document.getElementById("amount").value.trim();
+      if (!amount || isNaN(amount)) {
+        alert("Please enter or speak a valid amount.");
+        return;
+      }
+
+      var options = {
+        key: "rzp_test_1234567890abcdef", // Replace with your Razorpay Test Key
+        amount: amount * 100, // amount in paise
+        currency: "INR",
+        name: "Automatic UPI Payment",
+        description: "Payment via Whisper Speech-to-Text",
+        image: "https://upload.wikimedia.org/wikipedia/commons/7/75/Razorpay_logo.svg",
+        handler: function (response) {
+          document.getElementById("step2").style.display = "none";
+          document.getElementById("step3").style.display = "block";
+        },
+        prefill: {
+          email: "user@example.com",
+          contact: "9999999999"
+        },
+        theme: {
+          color: "#3399cc"
+        }
+      };
+
+      var rzp1 = new Razorpay(options);
+      rzp1.open();
+    }
+  </script>
+</body>
+</html>

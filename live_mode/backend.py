@@ -2,10 +2,10 @@
 Flask Backend for Voice Payment Recognition using OpenAI Whisper + Razorpay
 
 Installation:
-    pip install openai-whisper flask flask-cors razorpay
+    pip install openai-whisper flask flask-cors razorpay python-dotenv
 
 Usage:
-    1. Set your Razorpay credentials in the code below
+    1. Set your Razorpay credentials as environment variables
     2. python backend.py
     3. Open the HTML file in browser
 """
@@ -21,18 +21,13 @@ import re
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # Enable CORS for HTML to communicate with this server
 
 # ============= RAZORPAY CONFIGURATION =============
-# IMPORTANT: Replace these with your actual Razorpay credentials
-# Get them from: https://dashboard.razorpay.com/app/keys
-RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID')          #linve mode key id
-RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET')  #live mode secret id
-
-# For testing, use test keys:
-# RAZORPAY_KEY_ID = "rzp_test_YOUR_TEST_KEY"
-# RAZORPAY_KEY_SECRET = "YOUR_TEST_SECRET"
+# Get credentials from environment variables (set in Render dashboard)
+RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID')
+RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET')
 
 # Initialize Razorpay client
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
@@ -91,6 +86,11 @@ def extract_amount(text):
     
     total += current
     return total if total > 0 else None
+
+@app.route('/')
+def serve_index():
+    """Serve the main HTML file"""
+    return app.send_static_file('index.html')
 
 @app.route('/transcribe', methods=['POST'])
 def transcribe_audio():
@@ -258,16 +258,21 @@ def health_check():
 
 if __name__ == '__main__':
     # Validation check
-    if "YOUR_KEY" in RAZORPAY_KEY_ID or "YOUR_SECRET" in RAZORPAY_KEY_SECRET:
+    if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
         print("\n" + "="*60)
-        print("⚠️  WARNING: Please configure your Razorpay credentials!")
-        print("   Edit RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in this file")
-        print("   Get credentials from: https://dashboard.razorpay.com/app/keys")
+        print("⚠️  WARNING: Razorpay credentials not found!")
+        print("   Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET environment variables")
+        print("   In Render: Dashboard → Environment → Add Environment Variable")
         print("="*60 + "\n")
     
+    # Get port from environment variable (Render provides this)
+    port = int(os.environ.get('PORT', 10000))
+    
     print("\n" + "="*60)
-    print("Flask Server Running on http://localhost:5000")
+    print(f"Flask Server Running on port {port}")
     print("Whisper model ready for speech recognition")
     print("Razorpay payment gateway integrated")
     print("="*60 + "\n")
-    app.run(debug=True, port=5000)
+    
+    # CRITICAL: Use 0.0.0.0 to accept external connections, disable debug in production
+    app.run(host='0.0.0.0', port=port, debug=False)

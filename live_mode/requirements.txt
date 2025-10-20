@@ -1,4 +1,4 @@
-openai-whisper==20231117
+openai-whisper
 flask==3.0.0
 flask-cors==4.0.0
 razorpay==1.4.1
